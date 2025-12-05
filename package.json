@@ -50,7 +50,7 @@
     "jotai": "^2.15.0",
     "lucide-react": "^0.468.0",
     "masonic": "^4.1.0",
-    "monaco-editor": "^0.54.0",
+    "monaco-editor": "^0.55.1",
     "prism-react-renderer": "^2.4.1",
     "prismjs": "^1.30.0",
     "react": "^19.0.0",
