@@ -304,15 +304,22 @@ export default defineConfig({
     sourcemap: 'hidden',
     rolldownOptions: {
       output: {
-        // Excalidraw 自己預先切好的 `dist/prod/chunk-*.js` 各自維持成一個 chunk。
+        // Excalidraw 預先切好的**葉節點** chunk（`dist/prod/chunk-*.js` 裡沒有任何 import 的那幾個）
+        // 各自維持成一個 chunk。
         //
-        // ⚠️ 少了這段，vite 8.2 起（rolldown 1.2）會把其中幾個小 chunk 併進 1.1 MB 的主程式
-        //    `prod-*.js`，而字型 subsetting 的 Web Worker（subset-worker.chunk.js）正好依賴
-        //    它們——於是 worker 得 import 整包主程式，在 Worker 環境裡載入失敗，Excalidraw
-        //    退回主執行緒做 subsetting，那段 wasm 膠水碼（emscripten embind）用 `new Function`，
-        //    撞上頁面 CSP 沒有的 'unsafe-eval'：console 冒出 `Skipped glyph subsetting EvalError`。
-        //    worker 本身不受頁面 CSP 管（它的腳本回應沒有 CSP header），所以在 worker 裡沒事。
+        // ⚠️ 少了這段，vite 8.2 起（rolldown 1.2）會把那些小 chunk 併進 1.1 MB 的 Excalidraw 主程式
+        //    `prod-*.js`，而字型 subsetting 的 Web Worker（subset-worker.chunk.js）正好依賴它們——
+        //    於是 worker 得 import 整包主程式，在 Worker 環境裡載入失敗，Excalidraw 退回主執行緒做
+        //    subsetting，那段 wasm 膠水碼（emscripten embind）用 `new Function`，撞上頁面 CSP 沒有的
+        //    'unsafe-eval'：console 冒出 `Skipped glyph subsetting EvalError`。worker 本身不受頁面
+        //    CSP 管（它的腳本回應沒有 CSP header），所以在 worker 裡沒事。
         //    vite 曾經為此釘在 8.0.16；抓得到它的只有 tests/e2e/mdx-blocks.spec.ts 的 CSP 斷言。
+        //
+        // ⚠️ **只能抓葉節點，不能把 Excalidraw 的 chunk 全部抓進群組。** 群組預設會連同被捕捉模組的
+        //    相依一起拉進來（includeDependenciesRecursively），而大的那幾個 chunk 會 import app 本身
+        //    也在用的套件——那些套件被吸進 Excalidraw 的 chunk 之後，首頁為了拿它們就得先載入 2.3 MB
+        //    的 Excalidraw。實際踩過：每一頁的 script 從 1.8 MB 變成 3.7 MB，是 Lighthouse 的
+        //    resource-summary 預算抓到的（e2e 全綠）。葉節點沒有相依，不會有這個問題。
         codeSplitting: {
           groups: [
             {
@@ -320,7 +327,9 @@ export default defineConfig({
                 const m = /@excalidraw[\\/]excalidraw[\\/]dist[\\/]prod[\\/](chunk-[A-Z0-9]+)\.js$/.exec(id);
                 return m ? `excalidraw-${m[1]}` : null;
               },
-              test: /@excalidraw[\\/]excalidraw[\\/]dist[\\/]prod[\\/]chunk-/,
+              test: (id) =>
+                /@excalidraw[\\/]excalidraw[\\/]dist[\\/]prod[\\/]chunk-[A-Z0-9]+\.js$/.test(id) &&
+                !/\bimport\b|\bfrom\s*["']/.test(fs.readFileSync(id, 'utf8')),
             },
           ],
         },
